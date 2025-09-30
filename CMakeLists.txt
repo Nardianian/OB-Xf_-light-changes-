@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
+cmake_policy(SET CMP0177 NEW)
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_OSX_DEPLOYMENT_TARGET 10.14 CACHE STRING "Build for 10.14")
@@ -24,14 +25,27 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
+# Usa una sola sorgente per ASIO_HOME, o la variabile d'ambiente o un path hardcoded
+if(DEFINED ENV{ASIO_SDK_HOME})
+    set(ASIO_HOME $ENV{ASIO_SDK_HOME})
+else()
+    set(ASIO_HOME "C:/SDKs/asiosdk")
+endif()
+
 option(ENABLE_ASAN "Enable Address Sanitizer" OFF)
 option(ENABLE_TSAN "Enable Thread Sanitizer" OFF)
-option(ENABLE_ASIO "Enable ASIO support" OFF)
+option(ENABLE_ASIO "Enable ASIO support" ON)
 option(COPY_PLUGIN_AFTER_BUILD "Copy plugin after build is complete" OFF)
 
 include(libs/sst/sst-plugininfra/cmake/git-version-functions.cmake)
 version_from_versionfile_or_git()
 message(STATUS "DISPLAY_VERSION=${GIT_IMPLIED_DISPLAY_VERSION}; COMMIT_HASH=${GIT_COMMIT_HASH}; BRANCH=${GIT_BRANCH}")
+
+add_compile_definitions(
+    DISPLAY_VERSION="${GIT_IMPLIED_DISPLAY_VERSION}"
+    GIT_COMMIT_HASH="${GIT_COMMIT_HASH}"
+    GIT_BRANCH="${GIT_BRANCH}"
+)
 
 add_subdirectory(libs)
 message(STATUS "After libs, MODULE_PATH is ${CMAKE_MODULE_PATH}")
@@ -90,17 +104,24 @@ if(ENABLE_ASIO)
         endif()
     else()
         message(STATUS "ASIO support only available on Windows")
-        set(ENABLE_ASIO OFF)
-        add_compile_definitions(JUCE_ASIO=0)
+        set(ENABLE_ASIO ON)
+        add_compile_definitions(JUCE_ASIO=1)
     endif()
 else()
-    add_compile_definitions(JUCE_ASIO=0)
+    add_compile_definitions(JUCE_ASIO=1)
 endif()
 
 add_compile_definitions(JUCE_WEB_BROWSER=0)
 add_compile_definitions(JUCE_USE_CURL=0)
 
-list(APPEND OBXF_JUCE_FORMATS VST3 Standalone)
+list(APPEND OBXF_JUCE_FORMATS VST3 VST AAX LV2 Standalone)
+
+juce_set_vst2_sdk_path("C:/SDKs/vstsdk2.4")
+juce_set_aax_sdk_path("C:/SDKs/aax-sdk")
+
+include_directories(C:/SDKs/asiosdk/common)
+include_directories("C:/Program Files/JACK2/include")
+include_directories("C:/Program Files (x86)/Inno Setup 6")
 
 if(APPLE)
     list(APPEND OBXF_JUCE_FORMATS AU)
@@ -114,6 +135,10 @@ juce_add_plugin(OB-Xf
     COMPANY_NAME "Surge Synth Team"
     BUNDLE_ID "org.surge-synth-team.OB-Xf"
     LV2URI "urn:org.surge-synth-team.OB-Xf"
+    AAX_IDENTIFIER com.surge-synthesizer.OB-Xf
+    VST3_CATEGORIES "Synth" "Instrument"
+    VST2_CATEGORY kPlugCategSynth
+    AAX_EPlugInCategory_SWGenerators
     PLUGIN_MANUFACTURER_CODE SSTx
     PLUGIN_CODE OBXf
     FORMATS ${OBXF_JUCE_FORMATS}
@@ -121,7 +146,7 @@ juce_add_plugin(OB-Xf
     PRODUCT_NAME "OB-Xf"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
-    NEEDS_MIDI_OUTPUT FALSE
+    NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
     COPY_PLUGIN_AFTER_BUILD ${COPY_PLUGIN_AFTER_BUILD}
     JUCE_VST3_CAN_REPLACE_VST2 FALSE
@@ -178,7 +203,15 @@ target_link_libraries(OB-Xf PRIVATE
     sst-plugininfra
 )
 
-target_compile_definitions(OB-Xf PRIVATE JUCE_VST3_CAN_REPLACE_VST2=0 OBXF_VERSION_STR="${PROJECT_VERSION}")
+target_compile_definitions(OB-Xf PRIVATE 
+    JUCE_ASIO=1
+    JUCE_WASAPI=1
+    JUCE_DIRECTSOUND=1
+    JUCE_JACK=1
+    JUCE_USE_WINRT_MIDI=1
+    JUCE_FORCE_WINRT_MIDI=1
+    JUCE_VST3_CAN_REPLACE_VST2=0     
+    OBXF_VERSION_STR="${PROJECT_VERSION}")
 
 if(MSVC)
     target_compile_options(OB-Xf PRIVATE /W2)
